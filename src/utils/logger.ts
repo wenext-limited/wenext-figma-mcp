@@ -29,7 +29,8 @@ export function writeLogs(name: string, value: any): void {
       fs.mkdirSync(logsDir, { recursive: true });
     }
 
-    fs.writeFileSync(logPath, JSON.stringify(value, null, 2));
+    const content = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+    fs.writeFileSync(logPath, content);
     Logger.log(`Debug log written to: ${logPath}`);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);

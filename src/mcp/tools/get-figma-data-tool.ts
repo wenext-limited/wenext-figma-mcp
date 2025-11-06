@@ -86,8 +86,14 @@ async function getFigmaData(
 
     Logger.log(`Generating ${outputFormat.toUpperCase()} result from extracted data`);
     const formattedResult =
-      outputFormat === "json" ? JSON.stringify(result, null, 2) : yaml.dump(result);
+      outputFormat === "json" ? JSON.stringify(result) : yaml.dump(result);
 
+    if (outputFormat === "json") {
+      writeLogs("figma-result.json", formattedResult);
+    } else {
+      writeLogs("figma-result.yaml", formattedResult);
+    }
+    
     Logger.log("Sending result to client");
     return {
       content: [{ type: "text" as const, text: formattedResult }],
