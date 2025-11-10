@@ -1,0 +1,35 @@
+# Docker Compose Override Example
+# Copy this file to docker-compose.override.yml and customize as needed
+# This file is useful for local development overrides
+
+version: '3.8'
+
+services:
+  figma-mcp:
+    # Override the build context for local development
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    
+    # Add additional environment variables
+    environment:
+      - DEBUG=*
+      - NODE_ENV=development
+    
+    # Add volume mounts for live code reloading (development only)
+    volumes:
+      # Uncomment to mount source code for development
+      # - ./src:/app/src:ro
+      # - ./dist:/app/dist
+      
+      # Mount logs for easier access
+      - ./logs:/app/logs
+    
+    # Expose additional ports if needed
+    # ports:
+    #   - "9229:9229"  # Node.js debugger
+    
+    # Override command for development
+    # command: ["node", "--inspect=0.0.0.0:9229", "dist/bin.js"]
+

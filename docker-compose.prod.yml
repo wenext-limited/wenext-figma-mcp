@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  figma-mcp:
+    image: figma-mcp:latest
+    container_name: figma-mcp-server-prod
+    ports:
+      - "${PORT:-3333}:3333"
+    environment:
+      - NODE_ENV=production
+      - FIGMA_API_KEY=${FIGMA_API_KEY}
+      - FIGMA_OAUTH_TOKEN=${FIGMA_OAUTH_TOKEN:-}
+      - PORT=3333
+      - OUTPUT_FORMAT=${OUTPUT_FORMAT:-yaml}
+      - SKIP_IMAGE_DOWNLOADS=${SKIP_IMAGE_DOWNLOADS:-false}
+    volumes:
+      # Mount logs directory for persistence
+      - figma-mcp-logs:/app/logs
+    restart: always
+    networks:
+      - figma-mcp-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3333/mcp', (res) => { process.exit(res.statusCode === 200 ? 0 : 1); }).on('error', () => process.exit(1));"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Optional: Nginx reverse proxy for SSL termination and load balancing
+  nginx:
+    image: nginx:alpine
+    container_name: figma-mcp-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - nginx-cache:/var/cache/nginx
+    depends_on:
+      - figma-mcp
+    restart: always
+    networks:
+      - figma-mcp-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  figma-mcp-logs:
+    driver: local
+  nginx-cache:
+    driver: local
+
+networks:
+  figma-mcp-network:
+    driver: bridge
+

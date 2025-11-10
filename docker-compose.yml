@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  figma-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: figma-mcp-server
+    image: figma-mcp:latest
+    ports:
+      - "${PORT:-3333}:3333"
+    environment:
+      - NODE_ENV=production
+      - FIGMA_API_KEY=${FIGMA_API_KEY}
+      - FIGMA_OAUTH_TOKEN=${FIGMA_OAUTH_TOKEN:-}
+      - PORT=3333
+      - OUTPUT_FORMAT=${OUTPUT_FORMAT:-yaml}
+      - SKIP_IMAGE_DOWNLOADS=${SKIP_IMAGE_DOWNLOADS:-false}
+    volumes:
+      # Mount logs directory for persistence (optional)
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - figma-mcp-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3333/mcp', (res) => { process.exit(res.statusCode === 200 ? 0 : 1); }).on('error', () => process.exit(1));"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    # Resource limits (optional but recommended for production)
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+networks:
+  figma-mcp-network:
+    driver: bridge
+
