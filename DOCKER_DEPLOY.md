@@ -103,66 +103,76 @@ xdg-open http://localhost:3333/mcp  # Linux
 ssh user@your-server-ip
 
 # === 在服务器上 ===
-# 1. 克隆项目
+
+# 1. 克隆项目到服务器
 git clone git@github.com:wenext-limited/wenext-figma-mcp.git
 cd wenext-figma-mcp
+
+# 2. 运行服务器设置脚本（从项目目录）
 ./scripts/setup-server.sh
 
 # 脚本会自动：
+# - 检查项目目录
 # - 安装 Docker 和 Docker Compose
 # - 配置防火墙（开放 80、443、3333 端口）
-# - 克隆代码到 /opt/figma-mcp
-# - 提示输入 Figma API Key
-# - 可选配置 SSL 证书
+# - 更新代码到最新版本
+# - 提示输入 Figma API Key 并创建 .env
+# - 可选配置 SSL 证书（支持 Let's Encrypt）
 
-# 2. 部署服务
+# 3. 部署服务
 DEPLOY_ENV=production ./scripts/deploy.sh deploy
 
-# 3. 验证部署
-curl http://localhost:3333/mcp
-./scripts/deploy.sh status
-
-# 4. 配置 HTTPS（可选但推荐）
-# 使用 Let's Encrypt
-sudo apt-get install -y certbot
-sudo certbot certonly --standalone -d your-domain.com
-
-# 复制证书
-sudo cp /etc/letsencrypt/live/your-domain.com/fullchain.pem nginx/ssl/cert.pem
-sudo cp /etc/letsencrypt/live/your-domain.com/privkey.pem nginx/ssl/key.pem
-sudo chown $USER:$USER nginx/ssl/*.pem
-
-# 启动完整服务（包含 Nginx）
+# 或使用 Makefile
+make build
 docker-compose -f docker-compose.prod.yml up -d
 
-# 访问
-curl https://your-domain.com/health
+# 4. 验证部署
+make health
+curl http://localhost:3333/mcp
+
+# 5. 查看状态
+make status
+make logs
 ```
 
-### 方式 2: 手动部署
+### 方式 2: 手动部署（不使用脚本）
 
 ```bash
-# 1. 安装 Docker
-curl -fsSL https://get.docker.com -o get-docker.sh
-sudo sh get-docker.sh
-
-# 安装 Docker Compose
-sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-sudo chmod +x /usr/local/bin/docker-compose
-
-# 2. 克隆项目
-git clone git@github.com:wenext-limited/wenext-figma-mcp.git
+# 前提：已克隆项目
+# git clone git@github.com:wenext-limited/wenext-figma-mcp.git
 cd wenext-figma-mcp
 
-# 3. 配置环境变量
+# 1. 手动安装 Docker（如果没有安装）
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+sudo usermod -aG docker $USER
+
+# 2. 安装 Docker Compose
+COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep 'tag_name' | cut -d\" -f4)
+sudo curl -L "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+sudo chmod +x /usr/local/bin/docker-compose
+
+# 3. 启动 Docker
+sudo systemctl start docker
+sudo systemctl enable docker
+
+# 4. 配置防火墙（Ubuntu/Debian）
+sudo ufw allow 22/tcp
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw allow 3333/tcp
+sudo ufw --force enable
+
+# 5. 配置环境变量
 cp .env.example .env
-nano .env  # 添加 FIGMA_API_KEY
+nano .env  # 添加 FIGMA_API_KEY=your_key_here
 
-# 4. 部署
-docker-compose -f docker-compose.prod.yml up -d --build
+# 6. 构建和部署
+docker-compose -f docker-compose.prod.yml build
+docker-compose -f docker-compose.prod.yml up -d
 
-# 5. 验证
-docker-compose -f docker-compose.prod.yml ps
+# 7. 验证
+docker ps
 curl http://localhost:3333/mcp
 ```
 

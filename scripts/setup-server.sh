@@ -1,6 +1,9 @@
 #!/bin/bash
 # Server setup script for deploying Figma MCP Server
-# This script prepares a fresh server for deployment
+# This script prepares the current environment for deployment
+# 
+# Usage: Run this script from the project root directory
+#        cd wenext-figma-mcp && ./scripts/setup-server.sh
 
 set -e
 
@@ -183,45 +186,41 @@ setup_firewall() {
     fi
 }
 
-# Create deployment directory
-create_deploy_dir() {
-    print_header "Creating Deployment Directory"
+# Check if in project directory
+check_project_dir() {
+    print_header "Checking Project Directory"
     
-    DEPLOY_DIR="${DEPLOY_DIR:-/opt/figma-mcp}"
-    
-    print_info "Creating directory: $DEPLOY_DIR"
-    
-    sudo mkdir -p $DEPLOY_DIR
-    sudo chown $USER:$USER $DEPLOY_DIR
-    
-    print_success "Deployment directory created: $DEPLOY_DIR"
+    # Check if we're in the project root
+    if [ -f "package.json" ] && [ -f "Dockerfile" ]; then
+        PROJECT_DIR=$(pwd)
+        print_success "Running from project directory: $PROJECT_DIR"
+    else
+        print_error "Not in project root directory"
+        print_info "Please run this script from the project root:"
+        print_info "  cd wenext-figma-mcp && ./scripts/setup-server.sh"
+        exit 1
+    fi
 }
 
-# Clone repository
-clone_repository() {
-    print_header "Cloning Repository"
+# Update repository
+update_repository() {
+    print_header "Updating Repository"
     
-    DEPLOY_DIR="${DEPLOY_DIR:-/opt/figma-mcp}"
-    REPO_URL="${REPO_URL:-https://github.com/GLips/Figma-Context-MCP.git}"
+    print_info "Pulling latest changes..."
     
-    if [ -d "$DEPLOY_DIR/.git" ]; then
-        print_warning "Repository already exists, pulling latest changes..."
-        cd $DEPLOY_DIR
-        git pull
+    if [ -d ".git" ]; then
+        git pull origin main || git pull origin master || print_warning "Failed to pull updates"
+        print_success "Repository updated"
     else
-        print_info "Cloning repository from $REPO_URL"
-        git clone $REPO_URL $DEPLOY_DIR
+        print_warning "Not a git repository, skipping update"
     fi
-    
-    print_success "Repository ready at $DEPLOY_DIR"
 }
 
 # Setup environment file
 setup_env_file() {
     print_header "Setting Up Environment File"
     
-    DEPLOY_DIR="${DEPLOY_DIR:-/opt/figma-mcp}"
-    ENV_FILE="$DEPLOY_DIR/.env"
+    ENV_FILE=".env"
     
     if [ -f "$ENV_FILE" ]; then
         print_warning ".env file already exists"
@@ -233,13 +232,30 @@ setup_env_file() {
         fi
     fi
     
-    print_info "Creating .env file..."
+    # Copy from example if exists
+    if [ -f ".env.example" ]; then
+        cp .env.example .env
+        print_info "Created .env from .env.example"
+    fi
+    
+    print_info "Configuring environment variables..."
+    echo ""
     
     # Prompt for Figma API key
     read -p "Enter your Figma API Key: " FIGMA_API_KEY
     
-    # Create .env file
-    cat > $ENV_FILE << EOF
+    # Update or create .env file
+    if [ -f ".env" ]; then
+        # Update existing .env
+        if grep -q "^FIGMA_API_KEY=" .env; then
+            sed -i.bak "s|^FIGMA_API_KEY=.*|FIGMA_API_KEY=$FIGMA_API_KEY|" .env
+            rm -f .env.bak
+        else
+            echo "FIGMA_API_KEY=$FIGMA_API_KEY" >> .env
+        fi
+    else
+        # Create new .env file
+        cat > $ENV_FILE << EOF
 # Figma API Configuration
 FIGMA_API_KEY=$FIGMA_API_KEY
 
@@ -251,10 +267,11 @@ SKIP_IMAGE_DOWNLOADS=false
 # Node Environment
 NODE_ENV=production
 EOF
+    fi
     
     chmod 600 $ENV_FILE
     
-    print_success "Environment file created"
+    print_success "Environment file configured"
 }
 
 # Setup SSL certificates (optional)
@@ -269,32 +286,62 @@ setup_ssl() {
         return 0
     fi
     
-    DEPLOY_DIR="${DEPLOY_DIR:-/opt/figma-mcp}"
-    SSL_DIR="$DEPLOY_DIR/nginx/ssl"
+    SSL_DIR="nginx/ssl"
     
     mkdir -p $SSL_DIR
     
     print_info "Please choose SSL certificate option:"
     echo "1) Use existing certificate files"
     echo "2) Generate self-signed certificate (for testing)"
-    echo "3) Skip (will be setup later)"
+    echo "3) Use Let's Encrypt (requires domain)"
+    echo "4) Skip (will be setup later)"
     
-    read -p "Enter option (1-3): " SSL_OPTION
+    read -p "Enter option (1-4): " SSL_OPTION
     
     case $SSL_OPTION in
         1)
             print_info "Please copy your certificate files to: $SSL_DIR"
             print_info "Required files: cert.pem, key.pem"
+            print_warning "After copying files, press Enter to continue..."
+            read
             ;;
         2)
             print_info "Generating self-signed certificate..."
-            sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+            openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
                 -keyout $SSL_DIR/key.pem \
                 -out $SSL_DIR/cert.pem \
-                -subj "/C=US/ST=State/L=City/O=Organization/CN=localhost"
+                -subj "/C=CN/ST=State/L=City/O=WeNext/CN=localhost"
+            chmod 600 $SSL_DIR/*.pem
             print_success "Self-signed certificate generated"
             ;;
         3)
+            print_info "Setting up Let's Encrypt..."
+            read -p "Enter your domain name: " DOMAIN_NAME
+            
+            # Check if certbot is installed
+            if ! command -v certbot &> /dev/null; then
+                print_info "Installing certbot..."
+                if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
+                    sudo apt-get update
+                    sudo apt-get install -y certbot
+                elif [ "$OS" = "centos" ] || [ "$OS" = "rhel" ]; then
+                    sudo yum install -y certbot
+                fi
+            fi
+            
+            print_info "Running certbot..."
+            sudo certbot certonly --standalone -d $DOMAIN_NAME
+            
+            # Copy certificates
+            sudo cp /etc/letsencrypt/live/$DOMAIN_NAME/fullchain.pem $SSL_DIR/cert.pem
+            sudo cp /etc/letsencrypt/live/$DOMAIN_NAME/privkey.pem $SSL_DIR/key.pem
+            sudo chown $USER:$USER $SSL_DIR/*.pem
+            chmod 600 $SSL_DIR/*.pem
+            
+            print_success "Let's Encrypt certificate configured"
+            print_info "Certificate will auto-renew via certbot"
+            ;;
+        4)
             print_info "SSL setup skipped"
             ;;
         *)
@@ -340,54 +387,91 @@ test_installation() {
 display_summary() {
     print_header "Setup Summary"
     
-    DEPLOY_DIR="${DEPLOY_DIR:-/opt/figma-mcp}"
+    PROJECT_DIR=$(pwd)
     
     cat << EOF
 
-${GREEN}Server setup completed successfully!${NC}
+${GREEN}✓ Server setup completed successfully!${NC}
 
-Deployment directory: ${BLUE}$DEPLOY_DIR${NC}
+Project directory: ${BLUE}$PROJECT_DIR${NC}
 
-Next steps:
+${BLUE}Next steps:${NC}
+
 1. Review and update the .env file if needed:
-   ${YELLOW}nano $DEPLOY_DIR/.env${NC}
+   ${YELLOW}nano .env${NC}
 
 2. Deploy the application:
-   ${YELLOW}cd $DEPLOY_DIR && ./scripts/deploy.sh deploy${NC}
+   ${YELLOW}DEPLOY_ENV=production ./scripts/deploy.sh deploy${NC}
+
+   Or use Makefile:
+   ${YELLOW}make build && make up${NC}
 
 3. Check service status:
    ${YELLOW}docker ps${NC}
-   ${YELLOW}./scripts/deploy.sh status${NC}
+   ${YELLOW}make status${NC}
 
 4. View logs:
-   ${YELLOW}./scripts/deploy.sh logs${NC}
+   ${YELLOW}make logs${NC}
 
-For more information, see the deployment documentation:
-${BLUE}$DEPLOY_DIR/DEPLOYMENT.md${NC}
+5. Run health check:
+   ${YELLOW}make health${NC}
 
-${GREEN}You may need to log out and back in for Docker group changes to take effect.${NC}
+${BLUE}Quick commands:${NC}
+  ${YELLOW}make help${NC}              # Show all available commands
+  ${YELLOW}make status${NC}            # Check container status
+  ${YELLOW}make logs FOLLOW=1${NC}     # View live logs
+  ${YELLOW}./scripts/monitor.sh monitor${NC}  # Real-time monitoring
+
+${BLUE}Access the service:${NC}
+  Local:  http://localhost:3333/mcp
+  Server: http://your-server-ip:3333/mcp
+
+${BLUE}Documentation:${NC}
+  ${YELLOW}cat DOCKER_DEPLOY.md${NC}   # Complete deployment guide
+
+${GREEN}Important:${NC}
+- You may need to log out and back in for Docker group changes to take effect
+- Ensure firewall allows ports: 80, 443, 3333
+- For production use, configure SSL certificates
 
 EOF
+}
+
+# Fix script permissions
+fix_permissions() {
+    print_header "Setting Script Permissions"
+    
+    if [ -d "scripts" ]; then
+        chmod +x scripts/*.sh 2>/dev/null || true
+        print_success "Script permissions fixed"
+    fi
 }
 
 # Main setup flow
 main() {
     print_header "Figma MCP Server - Server Setup"
+    echo ""
+    print_info "This script will configure your server environment for Docker deployment"
+    echo ""
     
     check_root
+    check_project_dir
     detect_os
     
+    print_header "Installing Dependencies"
     install_docker
     install_docker_compose
     install_git
     start_docker
     
+    print_header "Configuring Server"
     setup_firewall
-    create_deploy_dir
-    clone_repository
+    update_repository
+    fix_permissions
     setup_env_file
     setup_ssl
     
+    print_header "Testing Installation"
     test_installation
     
     display_summary
