@@ -162,3 +162,14 @@ install: ## Initial setup and installation
 		$(MAKE) up; \
 	fi
 
+setup-macos: ## macOS specific setup (installs Docker Desktop if needed)
+	@echo "$(BLUE)Running macOS setup...$(NC)"
+	@./scripts/setup-macos.sh
+
+test-deployment: ## Run deployment tests
+	@echo "$(BLUE)Running deployment tests...$(NC)"
+	@./scripts/test-deployment.sh all
+
+test-quick: ## Run quick tests only
+	@./scripts/test-deployment.sh quick
+
