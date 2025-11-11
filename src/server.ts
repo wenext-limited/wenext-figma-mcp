@@ -176,7 +176,9 @@ export async function startHttpServer(port: number, mcpServer: McpServer): Promi
     }
   });
 
-  httpServer = app.listen(port, "127.0.0.1", () => {
+  // Listen on 0.0.0.0 to allow access from outside the container (Docker compatibility)
+  // In Docker, binding to 127.0.0.1 only allows container-internal access
+  httpServer = app.listen(port, "0.0.0.0", () => {
     Logger.log(`HTTP server listening on port ${port}`);
     Logger.log(`SSE endpoint available at http://localhost:${port}/sse`);
     Logger.log(`Message endpoint available at http://localhost:${port}/messages`);

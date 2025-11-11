@@ -9,19 +9,36 @@ RUN npm install -g pnpm@10.10.0
 WORKDIR /app
 
 # Copy package files
-COPY package.json pnpm-lock.yaml ./
+COPY package.json ./
+# Copy lock file if it exists (pnpm-lock.yaml or package-lock.json)
+COPY pnpm-lock.yaml* package-lock.json* ./
 
 # Install ALL dependencies (including devDependencies for building)
-RUN pnpm install --frozen-lockfile
+# Use pnpm if pnpm-lock.yaml exists, otherwise use npm
+RUN if [ -f pnpm-lock.yaml ]; then \
+      echo "Using pnpm for installation..." && \
+      pnpm install --frozen-lockfile; \
+    else \
+      echo "Using npm for installation..." && \
+      npm ci; \
+    fi
 
 # Copy source code
 COPY . .
 
 # Build the application
-RUN pnpm build
+RUN if [ -f pnpm-lock.yaml ]; then \
+      pnpm build; \
+    else \
+      npm run build; \
+    fi
 
 # Remove dev dependencies to reduce size
-RUN pnpm prune --prod
+RUN if [ -f pnpm-lock.yaml ]; then \
+      pnpm prune --prod; \
+    else \
+      npm prune --production; \
+    fi
 
 # Stage 2: Production - Create minimal runtime image
 FROM node:18-alpine AS production
