@@ -1,0 +1,86 @@
+# Multi-stage Dockerfile for Figma MCP Server
+# Stage 1: Builder - Install dependencies and build the application
+FROM node:18-alpine AS builder
+
+# Install pnpm globally
+RUN npm install -g pnpm@10.10.0
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package.json ./
+# Copy lock file if it exists (pnpm-lock.yaml or package-lock.json)
+COPY pnpm-lock.yaml* package-lock.json* ./
+
+# Install ALL dependencies (including devDependencies for building)
+# Use pnpm if pnpm-lock.yaml exists, otherwise use npm
+RUN if [ -f pnpm-lock.yaml ]; then \
+      echo "Using pnpm for installation..." && \
+      pnpm install --frozen-lockfile; \
+    else \
+      echo "Using npm for installation..." && \
+      npm ci; \
+    fi
+
+# Copy source code
+COPY . .
+
+# Build the application
+RUN if [ -f pnpm-lock.yaml ]; then \
+      pnpm build; \
+    else \
+      npm run build; \
+    fi
+
+# Remove dev dependencies to reduce size
+RUN if [ -f pnpm-lock.yaml ]; then \
+      pnpm prune --prod; \
+    else \
+      npm prune --production; \
+    fi
+
+# Stage 2: Production - Create minimal runtime image
+FROM node:18-alpine AS production
+
+# Install pnpm (only needed if we want to use pnpm commands)
+RUN npm install -g pnpm@10.10.0
+
+# Install dumb-init for proper signal handling
+RUN apk add --no-cache dumb-init
+
+# Create non-root user for security
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY --chown=nodejs:nodejs package.json ./
+
+# Copy production dependencies from builder
+COPY --chown=nodejs:nodejs --from=builder /app/node_modules ./node_modules
+
+# Copy built application from builder
+COPY --chown=nodejs:nodejs --from=builder /app/dist ./dist
+
+# Create logs directory with proper permissions
+RUN mkdir -p /app/logs && chown -R nodejs:nodejs /app/logs
+
+# Switch to non-root user
+USER nodejs
+
+# Expose port (default 3333)
+EXPOSE 3333
+
+# Health check endpoint
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:3333/mcp', (res) => { process.exit(res.statusCode === 200 ? 0 : 1); }).on('error', () => process.exit(1));"
+
+# Use dumb-init to handle signals properly
+ENTRYPOINT ["dumb-init", "--"]
+
+# Start the server in HTTP mode
+CMD ["node", "dist/bin.js"]
+

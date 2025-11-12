@@ -55,6 +55,22 @@ This MCP server is specifically designed for use with Cursor. Before responding 
 
 Reducing the amount of context provided to the model helps make the AI more accurate and the responses more relevant.
 
+## 🐳 Docker Deployment
+
+**New!** Deploy with Docker in 3 simple steps:
+
+```bash
+# macOS
+git clone https://github.com/GLips/Figma-Context-MCP.git
+cd Figma-Context-MCP
+make setup-macos
+
+# Linux/Server
+make install && make build && make up
+```
+
+📖 **[Complete Docker Deployment Guide →](DOCKER_DEPLOY.md)**
+
 ## Getting Started
 
 Many code editors and other AI clients use a configuration file to manage MCP servers.
